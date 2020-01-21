@@ -1,6 +1,7 @@
-This plugin was ported from core Cesium.
+This plugin is based on the cesium-sensors plugin by Analytical Graphics Inc. and Cesium Contributors: https://github.com/AnalyticalGraphicsInc/cesium-sensors
 
-Copyright 2011-2017 Analytical Graphics, Inc. and Contributors
+Copyright 2016 Jonathan Lounsbury
+Copyright 2011-2014 Analytical Graphics Inc. and Cesium Contributors
 
                                  Apache License
                            Version 2.0, January 2004
@@ -207,7 +208,7 @@ Copyright 2011-2017 Analytical Graphics, Inc. and Contributors
 Third-Party Code
 ================
 
-cesium-sensors includes the following third-party code.
+cesium-sensor-volumes includes the following third-party code.
 
 ### almond
 
