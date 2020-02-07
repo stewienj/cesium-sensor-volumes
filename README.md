@@ -39,19 +39,19 @@ Simple examples are included in the [examples](examples/) folder.  To run locall
 
 Here are some screen shots of the sample that shows off some different configurations. The cyan sensors are the rectangular sensor, and the magenta sensors are the torus sensor.
 
-![alt text](documentation\AllSensors.png)
+![alt text](documentation/AllSensors.png)
 
-![alt text](documentation\RectangularPyramidBottom.png)
+![alt text](documentation/RectangularPyramidBottom.png)
 
-![alt text](documentation\RectangularPyramidSide.png)
+![alt text](documentation/RectangularPyramidSide.png)
 
 ![alt text](documentation\RectangularPyramidTop.png)
 
-![alt text](documentation\TorusLeft.png)
+![alt text](documentation/TorusLeft.png)
 
-![alt text](documentation\TorusRight.png)
+![alt text](documentation/TorusRight.png)
 
-![alt text](documentation\TorusTop.png)
+![alt text](documentation/TorusTop.png)
 
 ## Build
 
