@@ -3,6 +3,6 @@
 .project
 .settings
 node_modules/
-dist/
 .tmp/
 coverage/
+node-v10.18.1-win-x64/

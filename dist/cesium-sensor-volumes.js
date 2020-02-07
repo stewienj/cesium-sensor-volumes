@@ -1,6 +1,7 @@
 /**
- * Cesium Sensor Volumes - https://github.com/jlouns/cesium-sensor-volumes
+ * Cesium Sensor Volumes - https://github.com/stewienj/cesium-sensor-volumes
  *
+ * Copyright 2020 John Stewien (Torus Sensor, and additions to Custom Sensor)
  * Copyright 2016 Jonathan Lounsbury
  * Copyright 2011-2014 Analytical Graphics Inc. and Cesium Contributors
  *
@@ -19,7 +20,8 @@
  * Portions licensed separately.
  * See https://github.com/jlouns/cesium-sensor-volumes/blob/master/LICENSE.md for full licensing details.
  *
- * Derived from Cesium Sensors - https://github.com/AnalyticalGraphicsInc/cesium-sensors
+ * Derived from Cesium Sensor Volumes - https://github.com/jlouns/cesium-sensor-volumes
+ * Which was Derived from Cesium Sensors - https://github.com/AnalyticalGraphicsInc/cesium-sensors
  */
 
 (function() {
@@ -718,6 +720,9 @@ define('custom/custom-sensor-volume',['require','Cesium/Core/BoundingSphere','Ce
 		this._pickCommand.boundingVolume = this._frontFaceColorCommand.boundingVolume;
 		this._pickCommand.owner = this;
 
+		this._primitiveTypeOverride = options.primitiveTypeOverride;
+		this._primitiveTypeOverrideDirty = false;
+
 		/**
 		 * <code>true</code> if this sensor will be shown; otherwise, <code>false</code>
 		 *
@@ -876,6 +881,18 @@ define('custom/custom-sensor-volume',['require','Cesium/Core/BoundingSphere','Ce
 				this._directions = value;
 				this._directionsDirty = true;
 			}
+		},
+		primitiveTypeOverride: {
+			get: function() {
+				return this._primitiveTypeOverride;
+			},
+			set: function(value) {
+				this._primitiveTypeOverride = value;
+				this._primitiveTypeOverrideDirty = true;
+				this._frontFaceColorCommand.primitiveType = this._primitiveTypeOverride;
+				this._backFaceColorCommand.primitiveType = this._frontFaceColorCommand.primitiveType;
+				this._pickCommand.primitiveType = this._frontFaceColorCommand.primitiveType;
+			}
 		}
 	});
 
@@ -885,10 +902,8 @@ define('custom/custom-sensor-volume',['require','Cesium/Core/BoundingSphere','Ce
 	function computePositions(customSensorVolume) {
 		var directions = customSensorVolume._directions;
 		var length = directions.length;
-		var positions = new Float32Array(3 * length);
+		var positions = [length];
 		var r = isFinite(customSensorVolume.radius) ? customSensorVolume.radius : FAR;
-
-		var boundingVolumePositions = [Cartesian3.ZERO];
 
 		for (var i = length - 2, j = length - 1, k = 0; k < length; i = j++, j = k++) {
 			// PERFORMANCE_IDEA:  We can avoid redundant operations for adjacent edges.
@@ -899,22 +914,108 @@ define('custom/custom-sensor-volume',['require','Cesium/Core/BoundingSphere','Ce
 			// Extend position so the volume encompasses the sensor's radius.
 			var theta = Math.max(Cartesian3.angleBetween(n0, n1), Cartesian3.angleBetween(n1, n2));
 			var distance = r / Math.cos(theta * 0.5);
-			var p = Cartesian3.multiplyByScalar(n1, distance, new Cartesian3());
-
-			positions[(j * 3)] = p.x;
-			positions[(j * 3) + 1] = p.y;
-			positions[(j * 3) + 2] = p.z;
-
-			boundingVolumePositions.push(p);
+			positions[j] = Cartesian3.multiplyByScalar(n1, distance, new Cartesian3());
 		}
 
-		BoundingSphere.fromPoints(boundingVolumePositions, customSensorVolume._boundingSphere);
+		BoundingSphere.fromPoints(positions, customSensorVolume._boundingSphere);
+
+		return positions;
+	}
+
+	function computePositionsOverride(customSensorVolume) {
+		var directions = customSensorVolume._directions;
+		var length = directions.length;
+		var positions = [length];
+		var r = isFinite(customSensorVolume.radius) ? customSensorVolume.radius : FAR;
+
+		for (var i = 0; i < length; i++) {
+			positions[i] = Cartesian3.multiplyByScalar(directions[i], r, new Cartesian3());
+		}
+
+		BoundingSphere.fromPoints(positions, customSensorVolume._boundingSphere);
 
 		return positions;
 	}
 
 	var nScratch = new Cartesian3();
+	var d01Scratch = new Cartesian3();
+	var d02Scratch = new Cartesian3();
+	function createVertexArrayOverride(customSensorVolume, context) {
+		var positions = computePositionsOverride(customSensorVolume);
+		var length = customSensorVolume._directions.length;
+		var vertices = new Float32Array(2 * 3 * length);
+		var vi = 0;
+		var i = 0;
+		var j = 1;
+		var k = 2;
+
+		for (; k < length; k += 3) {
+			j = k - 1;
+			i = j - 1;
+			var p0 = positions[i];
+			var p1 = positions[j];
+			var p2 = positions[k];
+			var d01 = Cartesian3.subtract(p0, p1, d01Scratch);
+			var d02 = Cartesian3.subtract(p0, p2, d02Scratch);
+			var n = Cartesian3.normalize(Cartesian3.cross(d01, d02, nScratch), nScratch); // Per-face normals
+
+			vertices[vi++] = p0.x;
+			vertices[vi++] = p0.y;
+			vertices[vi++] = p0.z;
+			vertices[vi++] = n.x;
+			vertices[vi++] = n.y;
+			vertices[vi++] = n.z;
+
+			vertices[vi++] = p1.x;
+			vertices[vi++] = p1.y;
+			vertices[vi++] = p1.z;
+			vertices[vi++] = n.x;
+			vertices[vi++] = n.y;
+			vertices[vi++] = n.z;
+
+			vertices[vi++] = p2.x;
+			vertices[vi++] = p2.y;
+			vertices[vi++] = p2.z;
+			vertices[vi++] = n.x;
+			vertices[vi++] = n.y;
+			vertices[vi++] = n.z;
+		}
+
+		var vertexBuffer = Buffer.createVertexBuffer({
+			context: context,
+			typedArray: new Float32Array(vertices),
+			usage: BufferUsage.STATIC_DRAW
+		});
+
+		var stride = 2 * 3 * Float32Array.BYTES_PER_ELEMENT;
+
+		var attributes = [{
+			index: attributeLocations.position,
+			vertexBuffer: vertexBuffer,
+			componentsPerAttribute: 3,
+			componentDatatype: ComponentDatatype.FLOAT,
+			offsetInBytes: 0,
+			strideInBytes: stride
+		}, {
+			index: attributeLocations.normal,
+			vertexBuffer: vertexBuffer,
+			componentsPerAttribute: 3,
+			componentDatatype: ComponentDatatype.FLOAT,
+			offsetInBytes: 3 * Float32Array.BYTES_PER_ELEMENT,
+			strideInBytes: stride
+		}];
+
+		return new VertexArray({
+			context: context,
+			attributes: attributes
+		});
+	}
+
 	function createVertexArray(customSensorVolume, context) {
+		if (typeof customSensorVolume._primitiveTypeOverride !== 'undefined') {
+			return createVertexArrayOverride(customSensorVolume, context);
+		}
+
 		var positions = computePositions(customSensorVolume);
 
 		var length = customSensorVolume._directions.length;
@@ -922,8 +1023,8 @@ define('custom/custom-sensor-volume',['require','Cesium/Core/BoundingSphere','Ce
 
 		var k = 0;
 		for (var i = length - 1, j = 0; j < length; i = j++) {
-			var p0 = new Cartesian3(positions[(i * 3)], positions[(i * 3) + 1], positions[(i * 3) + 2]);
-			var p1 = new Cartesian3(positions[(j * 3)], positions[(j * 3) + 1], positions[(j * 3) + 2]);
+			var p0 = positions[i];
+			var p1 = positions[j];
 			var n = Cartesian3.normalize(Cartesian3.cross(p1, p0, nScratch), nScratch); // Per-face normals
 
 			vertices[k++] = 0.0; // Sensor vertex
@@ -989,6 +1090,7 @@ define('custom/custom-sensor-volume',['require','Cesium/Core/BoundingSphere','Ce
 	 * @exception {DeveloperError} this.radius must be greater than or equal to zero.
 	 * @exception {DeveloperError} this.lateralSurfaceMaterial must be defined.
 	 */
+    // eslint-disable-next-line complexity
 	CustomSensorVolume.prototype.update = function(frameState) {
 		this._mode = frameState.mode;
 		if (!this.show || this._mode !== SceneMode.SCENE3D) {
@@ -1082,13 +1184,15 @@ define('custom/custom-sensor-volume',['require','Cesium/Core/BoundingSphere','Ce
 		}
 
 		// Recreate vertex buffer when directions change
-		var directionsChanged = this._directionsDirty;
+		var directionsChanged = this._directionsDirty || this._primitiveTypeOverrideDirty;
 		if (directionsChanged) {
 			this._directionsDirty = false;
+			this._primitiveTypeOverrideDirty = false;
 			this._va = this._va && this._va.destroy();
 
 			var directions = this._directions;
-			if (directions && (directions.length >= 3)) {
+			// Directions could be triangles or lines
+			if (directions && (directions.length >= 2)) {
 				this._frontFaceColorCommand.vertexArray = createVertexArray(this, context);
 				this._backFaceColorCommand.vertexArray = this._frontFaceColorCommand.vertexArray;
 				this._pickCommand.vertexArray = this._frontFaceColorCommand.vertexArray;
@@ -1273,6 +1377,7 @@ define('conic/conic-sensor-visualizer',['require','Cesium/Core/AssociativeArray'
 		spherical.magnitude = 1.0;
 	}
 
+    // eslint-disable-next-line max-params
 	function computeDirections(primitive, minimumClockAngle, maximumClockAngle, innerHalfAngle, outerHalfAngle) {
 		var directions = primitive.directions;
 		var angle;
@@ -2344,7 +2449,679 @@ define('rectangular/rectangular-sensor-visualizer',['require','Cesium/Core/Assoc
 	return RectangularSensorVisualizer;
 });
 
-define('initialize',['require','Cesium/Core/Cartesian3','Cesium/Core/Color','Cesium/Core/defined','Cesium/Core/Spherical','Cesium/Core/TimeInterval','Cesium/DataSources/CzmlDataSource','Cesium/DataSources/DataSourceDisplay','./conic/conic-sensor-graphics','./conic/conic-sensor-visualizer','./custom/custom-pattern-sensor-graphics','./custom/custom-pattern-sensor-visualizer','./rectangular/rectangular-sensor-graphics','./rectangular/rectangular-sensor-visualizer'],function(require) {
+define('torus/torus-sensor-graphics',['require','Cesium/Core/defaultValue','Cesium/Core/defined','Cesium/Core/defineProperties','Cesium/Core/DeveloperError','Cesium/Core/Event','Cesium/DataSources/createPropertyDescriptor'],function(require) {
+	'use strict';
+
+	var defaultValue = require('Cesium/Core/defaultValue');
+	var defined = require('Cesium/Core/defined');
+	var defineProperties = require('Cesium/Core/defineProperties');
+	var DeveloperError = require('Cesium/Core/DeveloperError');
+	var Event = require('Cesium/Core/Event');
+
+	var createPropertyDescriptor = require('Cesium/DataSources/createPropertyDescriptor');
+
+	/**
+	 * An optionally time-dynamic pyramid.
+	 *
+	 * @alias TorusSensorGraphics
+	 * @constructor
+	 */
+	var TorusSensorGraphics = function() {
+		this._zHalfAngle = undefined;
+		this._zHalfAngleSubscription = undefined;
+		this._yHalfAngle = undefined;
+		this._yHalfAngleSubscription = undefined;
+
+		this._lateralSurfaceMaterial = undefined;
+		this._lateralSurfaceMaterialSubscription = undefined;
+
+		this._intersectionColor = undefined;
+		this._intersectionColorSubscription = undefined;
+		this._intersectionWidth = undefined;
+		this._intersectionWidthSubscription = undefined;
+		this._showIntersection = undefined;
+		this._showIntersectionSubscription = undefined;
+		this._radius = undefined;
+		this._radiusSubscription = undefined;
+		this._show = undefined;
+		this._showSubscription = undefined;
+		this._definitionChanged = new Event();
+	};
+
+	defineProperties(TorusSensorGraphics.prototype, {
+		/**
+		 * Gets the event that is raised whenever a new property is assigned.
+		 * @memberof TorusSensorGraphics.prototype
+		 *
+		 * @type {Event}
+		 * @readonly
+		 */
+		definitionChanged: {
+			get: function() {
+				return this._definitionChanged;
+			}
+		},
+
+		/**
+		 * A {@link Property} which returns an array of {@link Spherical} instances representing the pyramid's projection.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		zHalfAngle: createPropertyDescriptor('zHalfAngle'),
+
+		/**
+		 * A {@link Property} which returns an array of {@link Spherical} instances representing the pyramid's projection.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		yHalfAngle: createPropertyDescriptor('yHalfAngle'),
+
+		/**
+		 * Gets or sets the {@link MaterialProperty} specifying the the pyramid's appearance.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {MaterialProperty}
+		 */
+		lateralSurfaceMaterial: createPropertyDescriptor('lateralSurfaceMaterial'),
+
+		/**
+		 * Gets or sets the {@link Color} {@link Property} specifying the color of the line formed by the intersection of the pyramid and other central bodies.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		intersectionColor: createPropertyDescriptor('intersectionColor'),
+
+		/**
+		 * Gets or sets the numeric {@link Property} specifying the width of the line formed by the intersection of the pyramid and other central bodies.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		intersectionWidth: createPropertyDescriptor('intersectionWidth'),
+
+		/**
+		 * Gets or sets the boolean {@link Property} specifying the visibility of the line formed by the intersection of the pyramid and other central bodies.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		showIntersection: createPropertyDescriptor('showIntersection'),
+
+		/**
+		 * Gets or sets the numeric {@link Property} specifying the radius of the pyramid's projection.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		radius: createPropertyDescriptor('radius'),
+
+		/**
+		 * Gets or sets the boolean {@link Property} specifying the visibility of the pyramid.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		show: createPropertyDescriptor('show')
+	});
+
+	/**
+	 * Duplicates a TorusSensorGraphics instance.
+	 *
+	 * @param {TorusSensorGraphics} [result] The object onto which to store the result.
+	 * @returns {TorusSensorGraphics} The modified result parameter or a new instance if one was not provided.
+	 */
+	TorusSensorGraphics.prototype.clone = function(result) {
+		if (!defined(result)) {
+			result = new TorusSensorGraphics();
+		}
+		result.zHalfAngle = this.zHalfAngle;
+		result.yHalfAngle = this.yHalfAngle;
+		result.radius = this.radius;
+		result.show = this.show;
+		result.showIntersection = this.showIntersection;
+		result.intersectionColor = this.intersectionColor;
+		result.intersectionWidth = this.intersectionWidth;
+		result.lateralSurfaceMaterial = this.lateralSurfaceMaterial;
+		return result;
+	};
+
+	/**
+	 * Assigns each unassigned property on this object to the value
+	 * of the same property on the provided source object.
+	 *
+	 * @param {TorusSensorGraphics} source The object to be merged into this object.
+	 */
+	TorusSensorGraphics.prototype.merge = function(source) {
+		// >>includeStart('debug', pragmas.debug);
+		if (!defined(source)) {
+			throw new DeveloperError('source is required.');
+		}
+		// >>includeEnd('debug');
+
+		this.zHalfAngle = defaultValue(this.zHalfAngle, source.zHalfAngle);
+		this.yHalfAngle = defaultValue(this.yHalfAngle, source.yHalfAngle);
+		this.radius = defaultValue(this.radius, source.radius);
+		this.show = defaultValue(this.show, source.show);
+		this.showIntersection = defaultValue(this.showIntersection, source.showIntersection);
+		this.intersectionColor = defaultValue(this.intersectionColor, source.intersectionColor);
+		this.intersectionWidth = defaultValue(this.intersectionWidth, source.intersectionWidth);
+		this.lateralSurfaceMaterial = defaultValue(this.lateralSurfaceMaterial, source.lateralSurfaceMaterial);
+	};
+
+	return TorusSensorGraphics;
+});
+
+define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/defaultValue','Cesium/Core/defined','Cesium/Core/defineProperties','Cesium/Core/destroyObject','Cesium/Core/Math','Cesium/Core/PrimitiveType','Cesium/Core/Cartesian3','../custom/custom-sensor-volume'],function(require) {
+	'use strict';
+
+	var clone = require('Cesium/Core/clone');
+	var defaultValue = require('Cesium/Core/defaultValue');
+	var defined = require('Cesium/Core/defined');
+	var defineProperties = require('Cesium/Core/defineProperties');
+	var destroyObject = require('Cesium/Core/destroyObject');
+	var CesiumMath = require('Cesium/Core/Math');
+	var PrimitiveType = require('Cesium/Core/PrimitiveType');
+	var Cartesian3 = require('Cesium/Core/Cartesian3');
+
+	var CustomSensorVolume = require('../custom/custom-sensor-volume');
+
+	function updateDirections(torusSensor) {
+		var angleStep = CesiumMath.toRadians(5.0);
+
+		// Adjust the step so we get an integer number of triangles
+		var azimuthStep = (torusSensor._yHalfAngle * 2.0) / Math.ceil((torusSensor._yHalfAngle * 2.0) / angleStep);
+		var azimuthStart = -torusSensor._yHalfAngle;
+		var azimuthEnd = torusSensor._yHalfAngle - (azimuthStep * 0.5);
+
+		// Adjust the step so we get an integer number of triangles
+		var elevationStep = (torusSensor._zHalfAngle * 2.0) / Math.ceil((torusSensor._zHalfAngle * 2.0) / angleStep);
+		var elevationStart = -torusSensor._zHalfAngle;
+		var elevationEnd = torusSensor._zHalfAngle - (elevationStep * 0.5);
+
+		var directions = torusSensor._customSensor.directions;
+		var count = 0;
+
+		// This calculates the triangles for the top and bottom of the sensor
+		[-torusSensor._zHalfAngle, torusSensor._zHalfAngle].forEach(function(elevation) {
+			var sinElevation = Math.sin(elevation);
+			var cosElevation = Math.cos(elevation);
+			for (var azimuth = azimuthStart; azimuth < azimuthEnd; azimuth += azimuthStep) {
+				var center1 = directions[count];
+				if (defined(center1)) {
+					center1.x = 0;
+					center1.y = 0;
+					center1.z = 0;
+				} else {
+					center1 = new Cartesian3(0, 0, 0);
+					directions[count] = center1;
+				}
+				count++;
+
+				var topAndBottomLeft = directions[count];
+				if (!defined(topAndBottomLeft)) {
+					topAndBottomLeft = new Cartesian3();
+					directions[count] = topAndBottomLeft;
+				}
+				count++;
+
+				topAndBottomLeft.x = Math.cos(azimuth) * cosElevation;
+				topAndBottomLeft.y = Math.sin(azimuth) * cosElevation;
+				topAndBottomLeft.z = sinElevation;
+
+				var topAndBottomRight = directions[count];
+				if (!defined(topAndBottomRight)) {
+					topAndBottomRight = new Cartesian3();
+					directions[count] = topAndBottomRight;
+				}
+				count++;
+
+				var azimuthNext = azimuth + azimuthStep;
+				topAndBottomRight.x = Math.cos(azimuthNext) * cosElevation;
+				topAndBottomRight.y = Math.sin(azimuthNext) * cosElevation;
+				topAndBottomRight.z = sinElevation;
+			}
+		});
+
+		// This calculates the front face of the sensor and the sides
+		for (var elevation = elevationStart; elevation < elevationEnd; elevation += elevationStep) {
+			var sinElevationBottom = Math.sin(elevation);
+			var cosElevationBottom = Math.cos(elevation);
+			var sinElevationTop = Math.sin(elevation + elevationStep);
+			var cosElevationTop = Math.cos(elevation + elevationStep);
+
+			// Calculate the sides if rendering less than a full circle
+			if (torusSensor._yHalfAngle < CesiumMath.PI * 0.9999) {
+				[-torusSensor._yHalfAngle, torusSensor._yHalfAngle].forEach(function(azimuth) {
+					var center = directions[count];
+					if (defined(center)) {
+						center.x = 0;
+						center.y = 0;
+						center.z = 0;
+					} else {
+						center = new Cartesian3(0, 0, 0);
+						directions[count] = center;
+					}
+					count++;
+
+					var sideBottom = directions[count];
+					if (!defined(sideBottom)) {
+						sideBottom = new Cartesian3();
+						directions[count] = sideBottom;
+					}
+					count++;
+
+					var sideTop = directions[count];
+					if (!defined(sideTop)) {
+						sideTop = new Cartesian3();
+						directions[count] = sideTop;
+					}
+					count++;
+
+					var sinAzimuth = Math.sin(azimuth);
+					var cosAzimuth = Math.cos(azimuth);
+
+					sideBottom.x = cosAzimuth * cosElevationBottom;
+					sideBottom.y = sinAzimuth * cosElevationBottom;
+					sideBottom.z = sinElevationBottom;
+
+					sideTop.x = cosAzimuth * cosElevationTop;
+					sideTop.y = sinAzimuth * cosElevationTop;
+					sideTop.z = sinElevationTop;
+				});
+			}
+
+			// Calculate the front face of the sensor
+			for (var azimuth = azimuthStart; azimuth < azimuthEnd; azimuth += azimuthStep) {
+				var sinAzimuthLeft = Math.sin(azimuth);
+				var cosAzimuthLeft = Math.cos(azimuth);
+				var sinAzimuthRight = Math.sin(azimuth + azimuthStep);
+				var cosAzimuthRight = Math.cos(azimuth + azimuthStep);
+
+				// Generate all the points, looks like I should be sharing some of these, but that
+				// causes issues down the track with points being unintentionally changed.
+				var bottomLeft1 = directions[count];
+				if (!defined(bottomLeft1)) {
+					bottomLeft1 = new Cartesian3();
+					directions[count] = bottomLeft1;
+				}
+				count++;
+
+				var topLeft1 = directions[count];
+				if (!defined(topLeft1)) {
+					topLeft1 = new Cartesian3();
+					directions[count] = topLeft1;
+				}
+				count++;
+
+				var bottomRight1 = directions[count];
+				if (!defined(bottomRight1)) {
+					bottomRight1 = new Cartesian3();
+					directions[count] = bottomRight1;
+				}
+				count++;
+
+				var bottomRight2 = directions[count];
+				if (!defined(bottomRight2)) {
+					bottomRight2 = new Cartesian3();
+					directions[count] = bottomRight2;
+				}
+				count++;
+
+				var topLeft2 = directions[count];
+				if (!defined(topLeft2)) {
+					topLeft2 = new Cartesian3();
+					directions[count] = topLeft2;
+				}
+				count++;
+
+				var topRight2 = directions[count];
+				if (!defined(topRight2)) {
+					topRight2 = new Cartesian3();
+					directions[count] = topRight2;
+				}
+				count++;
+
+				bottomLeft1.x = cosAzimuthLeft * cosElevationBottom;
+				bottomLeft1.y = sinAzimuthLeft * cosElevationBottom;
+				bottomLeft1.z = sinElevationBottom;
+
+				topLeft1.x = cosAzimuthLeft * cosElevationTop;
+				topLeft1.y = sinAzimuthLeft * cosElevationTop;
+				topLeft1.z = sinElevationTop;
+
+				topLeft2.x = topLeft1.x;
+				topLeft2.y = topLeft1.y;
+				topLeft2.z = topLeft1.z;
+
+				bottomRight1.x = cosAzimuthRight * cosElevationBottom;
+				bottomRight1.y = sinAzimuthRight * cosElevationBottom;
+				bottomRight1.z = sinElevationBottom;
+
+				bottomRight2.x = bottomRight1.x;
+				bottomRight2.y = bottomRight1.y;
+				bottomRight2.z = bottomRight1.z;
+
+				topRight2.x = cosAzimuthRight * cosElevationTop;
+				topRight2.y = sinAzimuthRight * cosElevationTop;
+				topRight2.z = sinElevationTop;
+			}
+		}
+
+		directions.length = count;
+		torusSensor._customSensor.directions = directions;
+	}
+
+	var TorusSensorVolume = function(options) {
+		options = defaultValue(options, defaultValue.EMPTY_OBJECT);
+
+		var customSensorOptions = clone(options);
+		customSensorOptions._pickPrimitive = defaultValue(options._pickPrimitive, this);
+		customSensorOptions.directions = undefined;
+		this._customSensor = new CustomSensorVolume(customSensorOptions);
+		this._customSensor.primitiveTypeOverride = PrimitiveType.TRIANGLES;
+
+		this._zHalfAngle = defaultValue(options.zHalfAngle, CesiumMath.PI_OVER_TWO);
+		this._yHalfAngle = defaultValue(options.yHalfAngle, CesiumMath.PI_OVER_TWO);
+
+		updateDirections(this);
+	};
+
+	defineProperties(TorusSensorVolume.prototype, {
+		zHalfAngle: {
+			get: function() {
+				return this._zHalfAngle;
+			},
+			set: function(value) {
+				if (this._zHalfAngle !== value) {
+					this._zHalfAngle = Math.max(0.000001, Math.min(value, CesiumMath.PI_OVER_TWO));
+					updateDirections(this);
+				}
+			}
+		},
+		yHalfAngle: {
+			get: function() {
+				return this._yHalfAngle;
+			},
+			set: function(value) {
+				if (this._yHalfAngle !== value) {
+					this._yHalfAngle = Math.max(0.000001, Math.min(value, CesiumMath.PI));
+					updateDirections(this);
+				}
+			}
+		},
+		show: {
+			get: function() {
+				return this._customSensor.show;
+			},
+			set: function(value) {
+				this._customSensor.show = value;
+			}
+		},
+		showIntersection: {
+			get: function() {
+				return this._customSensor.showIntersection;
+			},
+			set: function(value) {
+				this._customSensor.showIntersection = value;
+			}
+		},
+		showThroughEllipsoid: {
+			get: function() {
+				return this._customSensor.showThroughEllipsoid;
+			},
+			set: function(value) {
+				this._customSensor.showThroughEllipsoid = value;
+			}
+		},
+		modelMatrix: {
+			get: function() {
+				return this._customSensor.modelMatrix;
+			},
+			set: function(value) {
+				this._customSensor.modelMatrix = value;
+			}
+		},
+		radius: {
+			get: function() {
+				return this._customSensor.radius;
+			},
+			set: function(value) {
+				this._customSensor.radius = value;
+			}
+		},
+		lateralSurfaceMaterial: {
+			get: function() {
+				return this._customSensor.lateralSurfaceMaterial;
+			},
+			set: function(value) {
+				this._customSensor.lateralSurfaceMaterial = value;
+			}
+		},
+		intersectionColor: {
+			get: function() {
+				return this._customSensor.intersectionColor;
+			},
+			set: function(value) {
+				this._customSensor.intersectionColor = value;
+			}
+		},
+		intersectionWidth: {
+			get: function() {
+				return this._customSensor.intersectionWidth;
+			},
+			set: function(value) {
+				this._customSensor.intersectionWidth = value;
+			}
+		},
+		id: {
+			get: function() {
+				return this._customSensor.id;
+			},
+			set: function(value) {
+				this._customSensor.id = value;
+			}
+		}
+	});
+
+	TorusSensorVolume.prototype.update = function(frameState) {
+		this._customSensor.update(frameState);
+	};
+
+	TorusSensorVolume.prototype.isDestroyed = function() {
+		return false;
+	};
+
+	TorusSensorVolume.prototype.destroy = function() {
+		this._customSensor = this._customSensor && this._customSensor.destroy();
+		return destroyObject(this);
+	};
+
+	return TorusSensorVolume;
+});
+
+define('torus/torus-sensor-visualizer',['require','Cesium/Core/AssociativeArray','Cesium/Core/Cartesian3','Cesium/Core/Color','Cesium/Core/defined','Cesium/Core/destroyObject','Cesium/Core/DeveloperError','Cesium/Core/Math','Cesium/Core/Matrix3','Cesium/Core/Matrix4','Cesium/Core/Quaternion','Cesium/DataSources/MaterialProperty','Cesium/DataSources/Property','./torus-sensor-volume','../util/remove-primitive'],function(require) {
+	'use strict';
+
+	var AssociativeArray = require('Cesium/Core/AssociativeArray');
+	var Cartesian3 = require('Cesium/Core/Cartesian3');
+	var Color = require('Cesium/Core/Color');
+	var defined = require('Cesium/Core/defined');
+	var destroyObject = require('Cesium/Core/destroyObject');
+	var DeveloperError = require('Cesium/Core/DeveloperError');
+	var CesiumMath = require('Cesium/Core/Math');
+	var Matrix3 = require('Cesium/Core/Matrix3');
+	var Matrix4 = require('Cesium/Core/Matrix4');
+	var Quaternion = require('Cesium/Core/Quaternion');
+	var MaterialProperty = require('Cesium/DataSources/MaterialProperty');
+	var Property = require('Cesium/DataSources/Property');
+
+	var TorusSensorVolume = require('./torus-sensor-volume');
+	var removePrimitive = require('../util/remove-primitive');
+
+	var defaultIntersectionColor = Color.WHITE;
+	var defaultIntersectionWidth = 1.0;
+	var defaultRadius = Number.POSITIVE_INFINITY;
+
+	var matrix3Scratch = new Matrix3();
+	var cachedPosition = new Cartesian3();
+	var cachedOrientation = new Quaternion();
+
+	/**
+	 * A {@link Visualizer} which maps {@link Entity#torusSensor} to a {@link TorusSensor}.
+	 * @alias TorusSensorVisualizer
+	 * @constructor
+	 *
+	 * @param {Scene} scene The scene the primitives will be rendered in.
+	 * @param {EntityCollection} entityCollection The entityCollection to visualize.
+	 */
+	var TorusSensorVisualizer = function(scene, entityCollection) {
+		// >>includeStart('debug', pragmas.debug);
+		if (!defined(scene)) {
+			throw new DeveloperError('scene is required.');
+		}
+		if (!defined(entityCollection)) {
+			throw new DeveloperError('entityCollection is required.');
+		}
+		// >>includeEnd('debug');
+
+		entityCollection.collectionChanged.addEventListener(TorusSensorVisualizer.prototype._onCollectionChanged, this);
+
+		this._scene = scene;
+		this._primitives = scene.primitives;
+		this._entityCollection = entityCollection;
+		this._hash = {};
+		this._entitiesToVisualize = new AssociativeArray();
+
+		this._onCollectionChanged(entityCollection, entityCollection.values, [], []);
+	};
+
+	/**
+	 * Updates the primitives created by this visualizer to match their
+	 * Entity counterpart at the given time.
+	 *
+	 * @param {JulianDate} time The time to update to.
+	 * @returns {Boolean} This function always returns true.
+	 */
+	TorusSensorVisualizer.prototype.update = function(time) {
+		// >>includeStart('debug', pragmas.debug);
+		if (!defined(time)) {
+			throw new DeveloperError('time is required.');
+		}
+		// >>includeEnd('debug');
+
+		var entities = this._entitiesToVisualize.values;
+		var hash = this._hash;
+		var primitives = this._primitives;
+
+		for (var i = 0, len = entities.length; i < len; i++) {
+			var entity = entities[i];
+			var torusSensorGraphics = entity._torusSensor;
+
+			var position;
+			var orientation;
+			var data = hash[entity.id];
+			var show = entity.isShowing && entity.isAvailable(time) && Property.getValueOrDefault(torusSensorGraphics._show, time, true);
+
+			if (show) {
+				position = Property.getValueOrUndefined(entity._position, time, cachedPosition);
+				orientation = Property.getValueOrUndefined(entity._orientation, time, cachedOrientation);
+				show = defined(position) && defined(orientation);
+			}
+
+			if (!show) {
+				// don't bother creating or updating anything else
+				if (defined(data)) {
+					data.primitive.show = false;
+				}
+				continue;
+			}
+
+			var primitive = defined(data) ? data.primitive : undefined;
+			if (!defined(primitive)) {
+				primitive = new TorusSensorVolume();
+				primitive.id = entity;
+				primitives.add(primitive);
+
+				data = {
+					primitive: primitive,
+					position: undefined,
+					orientation: undefined
+				};
+				hash[entity.id] = data;
+			}
+
+			if (!Cartesian3.equals(position, data.position) || !Quaternion.equals(orientation, data.orientation)) {
+				Matrix4.fromRotationTranslation(Matrix3.fromQuaternion(orientation, matrix3Scratch), position, primitive.modelMatrix);
+				data.position = Cartesian3.clone(position, data.position);
+				data.orientation = Quaternion.clone(orientation, data.orientation);
+			}
+
+			primitive.show = true;
+			primitive.zHalfAngle = Property.getValueOrDefault(torusSensorGraphics._zHalfAngle, time, CesiumMath.PI_OVER_TWO);
+			primitive.yHalfAngle = Property.getValueOrDefault(torusSensorGraphics._yHalfAngle, time, CesiumMath.PI_OVER_TWO);
+			primitive.radius = Property.getValueOrDefault(torusSensorGraphics._radius, time, defaultRadius);
+			primitive.lateralSurfaceMaterial = MaterialProperty.getValue(time, torusSensorGraphics._lateralSurfaceMaterial, primitive.lateralSurfaceMaterial);
+			primitive.intersectionColor = Property.getValueOrClonedDefault(torusSensorGraphics._intersectionColor, time, defaultIntersectionColor, primitive.intersectionColor);
+			primitive.intersectionWidth = Property.getValueOrDefault(torusSensorGraphics._intersectionWidth, time, defaultIntersectionWidth);
+		}
+		return true;
+	};
+
+	/**
+	 * Returns true if this object was destroyed; otherwise, false.
+	 *
+	 * @returns {Boolean} True if this object was destroyed; otherwise, false.
+	 */
+	TorusSensorVisualizer.prototype.isDestroyed = function() {
+		return false;
+	};
+
+	/**
+	 * Removes and destroys all primitives created by this instance.
+	 */
+	TorusSensorVisualizer.prototype.destroy = function() {
+		var entities = this._entitiesToVisualize.values;
+		var hash = this._hash;
+		var primitives = this._primitives;
+		for (var i = entities.length - 1; i > -1; i--) {
+			removePrimitive(entities[i], hash, primitives);
+		}
+		return destroyObject(this);
+	};
+
+	/**
+	 * @private
+	 */
+	TorusSensorVisualizer.prototype._onCollectionChanged = function(entityCollection, added, removed, changed) {
+		var i;
+		var entity;
+		var entities = this._entitiesToVisualize;
+		var hash = this._hash;
+		var primitives = this._primitives;
+
+		for (i = added.length - 1; i > -1; i--) {
+			entity = added[i];
+			if (defined(entity._torusSensor) && defined(entity._position) && defined(entity._orientation)) {
+				entities.set(entity.id, entity);
+			}
+		}
+
+		for (i = changed.length - 1; i > -1; i--) {
+			entity = changed[i];
+			if (defined(entity._torusSensor) && defined(entity._position) && defined(entity._orientation)) {
+				entities.set(entity.id, entity);
+			} else {
+				removePrimitive(entity, hash, primitives);
+				entities.remove(entity.id);
+			}
+		}
+
+		for (i = removed.length - 1; i > -1; i--) {
+			entity = removed[i];
+			removePrimitive(entity, hash, primitives);
+			entities.remove(entity.id);
+		}
+	};
+
+	return TorusSensorVisualizer;
+});
+
+define('initialize',['require','Cesium/Core/Cartesian3','Cesium/Core/Color','Cesium/Core/defined','Cesium/Core/Spherical','Cesium/Core/TimeInterval','Cesium/DataSources/CzmlDataSource','Cesium/DataSources/DataSourceDisplay','./conic/conic-sensor-graphics','./conic/conic-sensor-visualizer','./custom/custom-pattern-sensor-graphics','./custom/custom-pattern-sensor-visualizer','./rectangular/rectangular-sensor-graphics','./rectangular/rectangular-sensor-visualizer','./torus/torus-sensor-graphics','./torus/torus-sensor-visualizer'],function(require) {
 	'use strict';
 
 	var Cartesian3 = require('Cesium/Core/Cartesian3');
@@ -2362,10 +3139,13 @@ define('initialize',['require','Cesium/Core/Cartesian3','Cesium/Core/Color','Ces
 	var CustomPatternSensorVisualizer = require('./custom/custom-pattern-sensor-visualizer');
 	var RectangularSensorGraphics = require('./rectangular/rectangular-sensor-graphics');
 	var RectangularSensorVisualizer = require('./rectangular/rectangular-sensor-visualizer');
+	var TorusSensorGraphics = require('./torus/torus-sensor-graphics');
+	var TorusSensorVisualizer = require('./torus/torus-sensor-visualizer');
 
 	var processPacketData = CzmlDataSource.processPacketData;
 	var processMaterialPacketData = CzmlDataSource.processMaterialPacketData;
 
+    // eslint-disable-next-line max-params
 	function processDirectionData(customPatternSensor, directions, interval, sourceUri, entityCollection) {
 		var i;
 		var len;
@@ -2401,6 +3181,7 @@ define('initialize',['require','Cesium/Core/Cartesian3','Cesium/Core/Color','Ces
 		processPacketData(Array, customPatternSensor, 'directions', directions, interval, sourceUri, entityCollection);
 	}
 
+    // eslint-disable-next-line max-params
 	function processCommonSensorProperties(sensor, sensorData, interval, sourceUri, entityCollection) {
 		processPacketData(Boolean, sensor, 'show', sensorData.show, interval, sourceUri, entityCollection);
 		processPacketData(Number, sensor, 'radius', sensorData.radius, interval, sourceUri, entityCollection);
@@ -2503,13 +3284,38 @@ define('initialize',['require','Cesium/Core/Cartesian3','Cesium/Core/Color','Ces
 		processPacketData(Number, rectangularSensor, 'yHalfAngle', rectangularSensorData.yHalfAngle, interval, sourceUri, entityCollection);
 	}
 
+	function processTorusSensor(entity, packet, entityCollection, sourceUri) {
+		var torusSensorData = packet.agi_torusSensor;
+		if (!defined(torusSensorData)) {
+			return;
+		}
+
+		var interval;
+		var intervalString = torusSensorData.interval;
+		if (defined(intervalString)) {
+			iso8601Scratch.iso8601 = intervalString;
+			interval = TimeInterval.fromIso8601(iso8601Scratch);
+		}
+
+		var torusSensor = entity.torusSensor;
+		if (!defined(torusSensor)) {
+			entity.addProperty('torusSensor');
+			torusSensor = new TorusSensorGraphics();
+			entity.torusSensor = torusSensor;
+		}
+
+		processCommonSensorProperties(torusSensor, torusSensorData, interval, sourceUri, entityCollection);
+		processPacketData(Number, torusSensor, 'zHalfAngle', torusSensorData.zHalfAngle, interval, sourceUri, entityCollection);
+		processPacketData(Number, torusSensor, 'yHalfAngle', torusSensorData.yHalfAngle, interval, sourceUri, entityCollection);
+	}
+
 	var initialized = false;
 	return function initialize() {
 		if (initialized) {
 			return;
 		}
 
-		CzmlDataSource.updaters.push(processConicSensor, processCustomPatternSensor, processRectangularSensor);
+		CzmlDataSource.updaters.push(processConicSensor, processCustomPatternSensor, processRectangularSensor, processTorusSensor);
 
 		var originalDefaultVisualizersCallback = DataSourceDisplay.defaultVisualizersCallback;
 		DataSourceDisplay.defaultVisualizersCallback = function(scene, entityCluster, dataSource) {
@@ -2518,7 +3324,8 @@ define('initialize',['require','Cesium/Core/Cartesian3','Cesium/Core/Color','Ces
 			return array.concat([
 				new ConicSensorVisualizer(scene, entities),
 				new CustomPatternSensorVisualizer(scene, entities),
-				new RectangularSensorVisualizer(scene, entities)
+				new RectangularSensorVisualizer(scene, entities),
+				new TorusSensorVisualizer(scene, entities)
 			]);
 		};
 
@@ -2526,7 +3333,7 @@ define('initialize',['require','Cesium/Core/Cartesian3','Cesium/Core/Color','Ces
 	};
 });
 
-define('cesium-sensor-volumes',['require','./initialize','./conic/conic-sensor-graphics','./conic/conic-sensor-visualizer','./custom/custom-pattern-sensor-graphics','./custom/custom-pattern-sensor-visualizer','./custom/custom-sensor-volume','./rectangular/rectangular-pyramid-sensor-volume','./rectangular/rectangular-sensor-graphics','./rectangular/rectangular-sensor-visualizer'],function(require) {
+define('cesium-sensor-volumes',['require','./initialize','./conic/conic-sensor-graphics','./conic/conic-sensor-visualizer','./custom/custom-pattern-sensor-graphics','./custom/custom-pattern-sensor-visualizer','./custom/custom-sensor-volume','./rectangular/rectangular-pyramid-sensor-volume','./rectangular/rectangular-sensor-graphics','./rectangular/rectangular-sensor-visualizer','./torus/torus-sensor-volume','./torus/torus-sensor-graphics','./torus/torus-sensor-visualizer'],function(require) {
 	'use strict';
 
 	var initialize = require('./initialize');
@@ -2538,6 +3345,9 @@ define('cesium-sensor-volumes',['require','./initialize','./conic/conic-sensor-g
 	var RectangularPyramidSensorVolume = require('./rectangular/rectangular-pyramid-sensor-volume');
 	var RectangularSensorGraphics = require('./rectangular/rectangular-sensor-graphics');
 	var RectangularSensorVisualizer = require('./rectangular/rectangular-sensor-visualizer');
+	var TorusSensorVolume = require('./torus/torus-sensor-volume');
+	var TorusSensorGraphics = require('./torus/torus-sensor-graphics');
+	var TorusSensorVisualizer = require('./torus/torus-sensor-visualizer');
 
 	initialize();
 
@@ -2549,7 +3359,10 @@ define('cesium-sensor-volumes',['require','./initialize','./conic/conic-sensor-g
 		CustomSensorVolume: CustomSensorVolume,
 		RectangularPyramidSensorVolume: RectangularPyramidSensorVolume,
 		RectangularSensorGraphics: RectangularSensorGraphics,
-		RectangularSensorVisualizer: RectangularSensorVisualizer
+		RectangularSensorVisualizer: RectangularSensorVisualizer,
+		TorusSensorVolume: TorusSensorVolume,
+		TorusSensorGraphics: TorusSensorGraphics,
+		TorusSensorVisualizer: TorusSensorVisualizer
 	};
 });
 
