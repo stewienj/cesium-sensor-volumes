@@ -74,8 +74,19 @@ function addRectangularSensors(xOffset, yOffset) {
 			rectangularPyramidSensor.xHalfAngle = Cesium.Math.toRadians(dx * 90 / 3);
 			rectangularPyramidSensor.yHalfAngle = Cesium.Math.toRadians(dy * 90 / 3);
 
-			rectangularPyramidSensor.lateralSurfaceMaterial = Cesium.Material.fromType('Color');
-			rectangularPyramidSensor.lateralSurfaceMaterial.uniforms.color = new Cesium.Color(0.0, 1.0, 1.0, 0.8);
+			rectangularPyramidSensor.lateralSurfaceMaterial = lateralSurfaceMaterial = new Cesium.Material({
+				fabric: {
+					type: 'Grid',
+					uniforms: {
+						color: new Cesium.Color(0.0, 0.0, 1.0, 0.9),
+						cellAlpha: 0.3,
+						lineCount: new Cesium.Cartesian2(8, 8),
+						lineThickness: new Cesium.Cartesian2(1.0, 1.0),
+						lineOffset: new Cesium.Cartesian2(0.0, 0.0)
+
+					}
+				}
+			});
 			viewer.scene.primitives.add(rectangularPyramidSensor);
 		}
 	}
@@ -112,8 +123,19 @@ function addTorusSensors(xOffset, yOffset) {
 			torusSensor.zHalfAngle = Cesium.Math.toRadians((dx * 90.0) / 3.0);
 			torusSensor.yHalfAngle = Cesium.Math.toRadians((dy * 90.0) / 3.0);
 
-			torusSensor.lateralSurfaceMaterial = Cesium.Material.fromType('Color');
-			torusSensor.lateralSurfaceMaterial.uniforms.color = new Cesium.Color(1.0, 0.0, 1.0, 0.8);
+			torusSensor.lateralSurfaceMaterial = new Cesium.Material({
+				fabric: {
+					type: 'Grid',
+					uniforms: {
+						color: new Cesium.Color(1.0, 0.0, 0.0, 0.9),
+						cellAlpha: 0.3,
+						lineCount: new Cesium.Cartesian2(8, 8),
+						lineThickness: new Cesium.Cartesian2(1.0, 1.0),
+						lineOffset: new Cesium.Cartesian2(0.0, 0.0)
+
+					}
+				}
+			});
 			viewer.scene.primitives.add(torusSensor);
 		}
 	}
