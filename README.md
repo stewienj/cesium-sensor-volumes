@@ -2,7 +2,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
 A Cesium plugin for visualizing sensor volumes. Based on [cesium-sensors](https://github.com/AnalyticalGraphicsInc/cesium-sensors) and evolved to support more recent Cesium versions.
-Note this fork (stewienj fork) has quite a few additions to it, including a new Torus like sensor, which is documented below.
+Note this fork (stewienj fork has a few additions to it, including a new Torus like sensor, which is documented below.
 
 ## Install
 
@@ -37,7 +37,7 @@ entity.conicSensor.intersectionColor = new Cesium.ConstantProperty(new Cesium.Co
 
 Simple examples are included in the [examples](examples/) folder.  To run locally, run `npm start` and navigate to [http://localhost:3000](http://localhost:3000) and select the example application to run.
 
-Here are some screen shots of the sample that shows off some different configurations. The cyan sensors are the rectangular sensor, and the magenta sensors are the torus sensor.
+Here are some screen shots of the sample that shows off some different configurations. The blue sensors are the rectangular sensor, and the red sensors are the new torus sensor (new in stewienj fork).
 
 ![alt text](documentation/AllSensors.png)
 
@@ -45,7 +45,7 @@ Here are some screen shots of the sample that shows off some different configura
 
 ![alt text](documentation/RectangularPyramidSide.png)
 
-![alt text](documentation\RectangularPyramidTop.png)
+![alt text](documentation/RectangularPyramidTop.png)
 
 ![alt text](documentation/TorusLeft.png)
 
