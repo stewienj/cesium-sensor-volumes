@@ -2467,10 +2467,15 @@ define('torus/torus-sensor-graphics',['require','Cesium/Core/defaultValue','Cesi
 	 * @constructor
 	 */
 	var TorusSensorGraphics = function() {
-		this._zHalfAngle = undefined;
-		this._zHalfAngleSubscription = undefined;
-		this._yHalfAngle = undefined;
-		this._yHalfAngleSubscription = undefined;
+		this._elevationSpan = undefined;
+		this._elevationSpanSubscription = undefined;
+		this._azimuthSpan = undefined;
+		this._azimuthSpanSubscription = undefined;
+
+		this._elevation = undefined;
+		this._elevationSubscription = undefined;
+		this._azimuth = undefined;
+		this._azimuthSubscription = undefined;
 
 		this._lateralSurfaceMaterial = undefined;
 		this._lateralSurfaceMaterialSubscription = undefined;
@@ -2507,14 +2512,28 @@ define('torus/torus-sensor-graphics',['require','Cesium/Core/defaultValue','Cesi
 		 * @memberof TorusSensorGraphics.prototype
 		 * @type {Property}
 		 */
-		zHalfAngle: createPropertyDescriptor('zHalfAngle'),
+		elevationSpan: createPropertyDescriptor('elevationSpan'),
 
 		/**
 		 * A {@link Property} which returns an array of {@link Spherical} instances representing the pyramid's projection.
 		 * @memberof TorusSensorGraphics.prototype
 		 * @type {Property}
 		 */
-		yHalfAngle: createPropertyDescriptor('yHalfAngle'),
+		elevation: createPropertyDescriptor('elevation'),
+
+		/**
+		 * A {@link Property} which returns an array of {@link Spherical} instances representing the pyramid's projection.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		azimuthSpan: createPropertyDescriptor('azimuthSpan'),
+
+		/**
+		 * A {@link Property} which returns an array of {@link Spherical} instances representing the pyramid's projection.
+		 * @memberof TorusSensorGraphics.prototype
+		 * @type {Property}
+		 */
+		azimuth: createPropertyDescriptor('azimuth'),
 
 		/**
 		 * Gets or sets the {@link MaterialProperty} specifying the the pyramid's appearance.
@@ -2569,8 +2588,10 @@ define('torus/torus-sensor-graphics',['require','Cesium/Core/defaultValue','Cesi
 		if (!defined(result)) {
 			result = new TorusSensorGraphics();
 		}
-		result.zHalfAngle = this.zHalfAngle;
-		result.yHalfAngle = this.yHalfAngle;
+		result.elevationSpan = this.elevationSpan;
+		result.azimuthSpan = this.azimuthSpan;
+		result.elevation = this.elevation;
+		result.azimuth = this.azimuth;
 		result.radius = this.radius;
 		result.show = this.show;
 		result.showIntersection = this.showIntersection;
@@ -2593,8 +2614,10 @@ define('torus/torus-sensor-graphics',['require','Cesium/Core/defaultValue','Cesi
 		}
 		// >>includeEnd('debug');
 
-		this.zHalfAngle = defaultValue(this.zHalfAngle, source.zHalfAngle);
-		this.yHalfAngle = defaultValue(this.yHalfAngle, source.yHalfAngle);
+		this.elevationSpan = defaultValue(this.elevationSpan, source.elevationSpan);
+		this.azimuthSpan = defaultValue(this.azimuthSpan, source.azimuthSpan);
+		this.elevation = defaultValue(this.elevation, source.elevation);
+		this.azimuth = defaultValue(this.azimuth, source.azimuth);
 		this.radius = defaultValue(this.radius, source.radius);
 		this.show = defaultValue(this.show, source.show);
 		this.showIntersection = defaultValue(this.showIntersection, source.showIntersection);
@@ -2606,7 +2629,7 @@ define('torus/torus-sensor-graphics',['require','Cesium/Core/defaultValue','Cesi
 	return TorusSensorGraphics;
 });
 
-define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/defaultValue','Cesium/Core/defined','Cesium/Core/defineProperties','Cesium/Core/destroyObject','Cesium/Core/Math','Cesium/Core/PrimitiveType','Cesium/Core/Cartesian3','../custom/custom-sensor-volume'],function(require) {
+define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/defaultValue','Cesium/Core/defined','Cesium/Core/defineProperties','Cesium/Core/destroyObject','Cesium/Core/Math','Cesium/Core/PrimitiveType','Cesium/Core/Cartesian3','Cesium/Core/Matrix3','../custom/custom-sensor-volume'],function(require) {
 	'use strict';
 
 	var clone = require('Cesium/Core/clone');
@@ -2617,6 +2640,7 @@ define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/d
 	var CesiumMath = require('Cesium/Core/Math');
 	var PrimitiveType = require('Cesium/Core/PrimitiveType');
 	var Cartesian3 = require('Cesium/Core/Cartesian3');
+	var Matrix3 = require('Cesium/Core/Matrix3');
 
 	var CustomSensorVolume = require('../custom/custom-sensor-volume');
 
@@ -2624,20 +2648,20 @@ define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/d
 		var angleStep = CesiumMath.toRadians(5.0);
 
 		// Adjust the step so we get an integer number of triangles
-		var azimuthStep = (torusSensor._yHalfAngle * 2.0) / Math.ceil((torusSensor._yHalfAngle * 2.0) / angleStep);
-		var azimuthStart = -torusSensor._yHalfAngle;
-		var azimuthEnd = torusSensor._yHalfAngle - (azimuthStep * 0.5);
+		var azimuthStep = torusSensor._azimuthSpan / Math.ceil(torusSensor._azimuthSpan / angleStep);
+		var azimuthStart = -(torusSensor._azimuthSpan * 0.5);
+		var azimuthEnd = (torusSensor._azimuthSpan * 0.5) - (azimuthStep * 0.5);
 
 		// Adjust the step so we get an integer number of triangles
-		var elevationStep = (torusSensor._zHalfAngle * 2.0) / Math.ceil((torusSensor._zHalfAngle * 2.0) / angleStep);
-		var elevationStart = -torusSensor._zHalfAngle;
-		var elevationEnd = torusSensor._zHalfAngle - (elevationStep * 0.5);
+		var elevationStep = torusSensor._elevationSpan / Math.ceil(torusSensor._elevationSpan / angleStep);
+		var elevationStart = -(torusSensor._elevationSpan * 0.5);
+		var elevationEnd = (torusSensor._elevationSpan * 0.5) - (elevationStep * 0.5);
 
 		var directions = torusSensor._customSensor.directions;
 		var count = 0;
 
 		// This calculates the triangles for the top and bottom of the sensor
-		[-torusSensor._zHalfAngle, torusSensor._zHalfAngle].forEach(function(elevation) {
+		[-torusSensor._elevationSpan * 0.5, torusSensor._elevationSpan * 0.5].forEach(function(elevation) {
 			var sinElevation = Math.sin(elevation);
 			var cosElevation = Math.cos(elevation);
 			for (var azimuth = azimuthStart; azimuth < azimuthEnd; azimuth += azimuthStep) {
@@ -2685,8 +2709,8 @@ define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/d
 			var cosElevationTop = Math.cos(elevation + elevationStep);
 
 			// Calculate the sides if rendering less than a full circle
-			if (torusSensor._yHalfAngle < CesiumMath.PI * 0.9999) {
-				[-torusSensor._yHalfAngle, torusSensor._yHalfAngle].forEach(function(azimuth) {
+			if (torusSensor._azimuthSpan < CesiumMath.PI * 1.9999) {
+				[-torusSensor._azimuthSpan * 0.5, torusSensor._azimuthSpan * 0.5].forEach(function(azimuth) {
 					var center = directions[count];
 					if (defined(center)) {
 						center.x = 0;
@@ -2802,6 +2826,14 @@ define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/d
 			}
 		}
 
+		// These rotations are inverted because we are rotation clockwise like
+		// North - East not anti clockwise like the right hand rule
+		var orientation = Matrix3.multiply(Matrix3.fromRotationZ(-torusSensor._azimuth), Matrix3.fromRotationY(-torusSensor._elevation), new Matrix3());
+
+		for (var i = 0; i < count; ++i) {
+			Matrix3.multiplyByVector(orientation, directions[i], directions[i]);
+		}
+
 		directions.length = count;
 		torusSensor._customSensor.directions = directions;
 	}
@@ -2815,31 +2847,55 @@ define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/d
 		this._customSensor = new CustomSensorVolume(customSensorOptions);
 		this._customSensor.primitiveTypeOverride = PrimitiveType.TRIANGLES;
 
-		this._zHalfAngle = defaultValue(options.zHalfAngle, CesiumMath.PI_OVER_TWO);
-		this._yHalfAngle = defaultValue(options.yHalfAngle, CesiumMath.PI_OVER_TWO);
+		this._elevationSpan = defaultValue(options.elevationSpan, CesiumMath.PI_OVER_TWO);
+		this._azimuthSpan = defaultValue(options.azimuthSpan, CesiumMath.PI_OVER_TWO);
+		this._elevation = defaultValue(options.elevation, 0.0);
+		this._azimuth = defaultValue(options.azimuth, 0.0);
 
 		updateDirections(this);
 	};
 
 	defineProperties(TorusSensorVolume.prototype, {
-		zHalfAngle: {
+		elevationSpan: {
 			get: function() {
-				return this._zHalfAngle;
+				return this._elevationSpan;
 			},
 			set: function(value) {
-				if (this._zHalfAngle !== value) {
-					this._zHalfAngle = Math.max(0.000001, Math.min(value, CesiumMath.PI_OVER_TWO));
+				if (this._elevationSpan !== value) {
+					this._elevationSpan = Math.max(0.000001, Math.min(value, CesiumMath.PI));
 					updateDirections(this);
 				}
 			}
 		},
-		yHalfAngle: {
+		elevation: {
 			get: function() {
-				return this._yHalfAngle;
+				return this._elevation;
 			},
 			set: function(value) {
-				if (this._yHalfAngle !== value) {
-					this._yHalfAngle = Math.max(0.000001, Math.min(value, CesiumMath.PI));
+				if (this._elevation !== value) {
+					this._elevation = value;
+					updateDirections(this);
+				}
+			}
+		},
+		azimuthSpan: {
+			get: function() {
+				return this._azimuthSpan;
+			},
+			set: function(value) {
+				if (this._azimuthSpan !== value) {
+					this._azimuthSpan = Math.max(0.000001, Math.min(value, CesiumMath.TWO_PI));
+					updateDirections(this);
+				}
+			}
+		},
+		azimuth: {
+			get: function() {
+				return this._azimuth;
+			},
+			set: function(value) {
+				if (this._azimuth !== value) {
+					this._azimuth = value;
 					updateDirections(this);
 				}
 			}
@@ -2881,7 +2937,10 @@ define('torus/torus-sensor-volume',['require','Cesium/Core/clone','Cesium/Core/d
 				return this._customSensor.radius;
 			},
 			set: function(value) {
-				this._customSensor.radius = value;
+				if (this._customSensor.radius !== value) {
+					this._customSensor.radius = value;
+					this._customSensor._directionsDirty = true;
+				}
 			}
 		},
 		lateralSurfaceMaterial: {
@@ -3052,8 +3111,10 @@ define('torus/torus-sensor-visualizer',['require','Cesium/Core/AssociativeArray'
 			}
 
 			primitive.show = true;
-			primitive.zHalfAngle = Property.getValueOrDefault(torusSensorGraphics._zHalfAngle, time, CesiumMath.PI_OVER_TWO);
-			primitive.yHalfAngle = Property.getValueOrDefault(torusSensorGraphics._yHalfAngle, time, CesiumMath.PI_OVER_TWO);
+			primitive.elevationSpan = Property.getValueOrDefault(torusSensorGraphics._elevationSpan, time, CesiumMath.PI_OVER_TWO);
+			primitive.azimuthSpan = Property.getValueOrDefault(torusSensorGraphics._azimuthSpan, time, CesiumMath.PI_OVER_TWO);
+			primitive.elevation = Property.getValueOrDefault(torusSensorGraphics._elevation, time, 0.0);
+			primitive.azimuth = Property.getValueOrDefault(torusSensorGraphics._azimuth, time, 0.0);
 			primitive.radius = Property.getValueOrDefault(torusSensorGraphics._radius, time, defaultRadius);
 			primitive.lateralSurfaceMaterial = MaterialProperty.getValue(time, torusSensorGraphics._lateralSurfaceMaterial, primitive.lateralSurfaceMaterial);
 			primitive.intersectionColor = Property.getValueOrClonedDefault(torusSensorGraphics._intersectionColor, time, defaultIntersectionColor, primitive.intersectionColor);
@@ -3305,8 +3366,10 @@ define('initialize',['require','Cesium/Core/Cartesian3','Cesium/Core/Color','Ces
 		}
 
 		processCommonSensorProperties(torusSensor, torusSensorData, interval, sourceUri, entityCollection);
-		processPacketData(Number, torusSensor, 'zHalfAngle', torusSensorData.zHalfAngle, interval, sourceUri, entityCollection);
-		processPacketData(Number, torusSensor, 'yHalfAngle', torusSensorData.yHalfAngle, interval, sourceUri, entityCollection);
+		processPacketData(Number, torusSensor, 'azimuth', torusSensorData.azimuth, interval, sourceUri, entityCollection);
+		processPacketData(Number, torusSensor, 'elevation', torusSensorData.elevation, interval, sourceUri, entityCollection);
+		processPacketData(Number, torusSensor, 'azimuthSpan', torusSensorData.azimuthSpan, interval, sourceUri, entityCollection);
+		processPacketData(Number, torusSensor, 'elevationSpan', torusSensorData.elevationSpan, interval, sourceUri, entityCollection);
 	}
 
 	var initialized = false;
@@ -3383,7 +3446,6 @@ define('Cesium/DataSources/createMaterialPropertyDescriptor', function() { retur
 define('Cesium/DataSources/createPropertyDescriptor', function() { return Cesium['createPropertyDescriptor']; });
 define('Cesium/Core/AssociativeArray', function() { return Cesium['AssociativeArray']; });
 define('Cesium/Core/destroyObject', function() { return Cesium['destroyObject']; });
-define('Cesium/Core/Math', function() { return Cesium['Math']; });
 define('Cesium/Core/Matrix3', function() { return Cesium['Matrix3']; });
 define('Cesium/Core/Matrix4', function() { return Cesium['Matrix4']; });
 define('Cesium/Core/Quaternion', function() { return Cesium['Quaternion']; });
@@ -3405,6 +3467,7 @@ define('Cesium/Scene/BlendingState', function() { return Cesium['BlendingState']
 define('Cesium/Scene/CullFace', function() { return Cesium['CullFace']; });
 define('Cesium/Scene/Material', function() { return Cesium['Material']; });
 define('Cesium/Scene/SceneMode', function() { return Cesium['SceneMode']; });
+define('Cesium/Core/Math', function() { return Cesium['Math']; });
 define('Cesium/Core/clone', function() { return Cesium['clone']; });
 // eslint-disable-next-line import/no-dynamic-require
 require([

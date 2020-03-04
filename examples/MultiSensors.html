@@ -80,7 +80,7 @@ function addRectangularSensors(xOffset, yOffset) {
 					uniforms: {
 						color: new Cesium.Color(0.0, 0.0, 1.0, 0.9),
 						cellAlpha: 0.3,
-						lineCount: new Cesium.Cartesian2(8, 8),
+						lineCount: new Cesium.Cartesian2(16, 16),
 						lineThickness: new Cesium.Cartesian2(1.0, 1.0),
 						lineOffset: new Cesium.Cartesian2(0.0, 0.0)
 
@@ -92,26 +92,6 @@ function addRectangularSensors(xOffset, yOffset) {
 	}
 }
 
-/*
-function addConicSensors(xOffset, yOffset) {
-	for (var dx = 1; dx < 3.5; dx += 1) {
-		for (var dy = 1; dy < 3.5; dy += 1) {
-			var conicSensor = new CesiumSensorVolumes.ConicSensorGraphics();
-
-			var translationMatrix = Cesium.Matrix4.fromRotationTranslation(Cesium.Matrix3.IDENTITY, new Cesium.Cartesian3((dx + xOffset) * altitude * 3, (dy + yOffset) * altitude * 3, 0));
-			conicSensor.modelMatrix = Cesium.Matrix4.multiply(getModelMatrix(), translationMatrix, new Cesium.Matrix4());
-			conicSensor.radius = altitude - 500;
-			conicSensor.xHalfAngle = Cesium.Math.toRadians(dx * 90 / 3);
-			conicSensor.yHalfAngle = Cesium.Math.toRadians(dy * 90 / 3);
-
-			conicSensor.lateralSurfaceMaterial = Cesium.Material.fromType('Color');
-			conicSensor.lateralSurfaceMaterial.uniforms.color = new Cesium.Color(1.0, 1.0, 0.0, 0.8);
-			viewer.scene.primitives.add(conicSensor);
-		}
-	}
-}
-*/
-
 function addTorusSensors(xOffset, yOffset) {
 	for (var dx = 1.0; dx < 3.5; dx += 1.0) {
 		for (var dy = 1.0; dy < 6.5; dy += 1.0) {
@@ -120,8 +100,8 @@ function addTorusSensors(xOffset, yOffset) {
 			var translationMatrix = Cesium.Matrix4.fromRotationTranslation(Cesium.Matrix3.IDENTITY, new Cesium.Cartesian3((dx + xOffset) * altitude * 3, (dy + yOffset) * altitude * 3, 0));
 			torusSensor.modelMatrix = Cesium.Matrix4.multiply(getModelMatrix(), translationMatrix, new Cesium.Matrix4());
 			torusSensor.radius = altitude - 500.0;
-			torusSensor.zHalfAngle = Cesium.Math.toRadians((dx * 90.0) / 3.0);
-			torusSensor.yHalfAngle = Cesium.Math.toRadians((dy * 90.0) / 3.0);
+			torusSensor.elevationSpan = Cesium.Math.toRadians((dx * 180.0) / 3.0);
+			torusSensor.azimuthSpan = Cesium.Math.toRadians((dy * 180.0) / 3.0);
 
 			torusSensor.lateralSurfaceMaterial = new Cesium.Material({
 				fabric: {
